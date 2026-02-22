@@ -205,3 +205,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+.DS_Store
+
+# DB Stuff
+data_pipeline/nba.db
+data_pipeline/chroma_db/
+
+#CSV Data
+data_pipeline/*.csv

@@ -1,0 +1,123 @@
+from nba_api.stats.endpoints import boxscoretraditionalv3, leaguegamefinder
+import pandas as pd
+import time
+
+SEASON = "2025-26"
+RATE_LIMIT_DELAY = 3  # seconds between requests to avoid NBA API throttling
+TESTING_LIMIT = 10
+SEASON_TYPES = ("Regular Season", "Playoffs", "PlayIn")
+
+headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Referer': 'https://www.nba.com/',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://www.nba.com',
+        'Connection': 'keep-alive',
+}
+
+"""Get all game IDs and dates for the given NBA season (Regular Season, Playoffs, PlayIn)."""
+def get_all_game_ids_and_dates(season: str) -> tuple[list[str], dict[str, str]]:
+    all_game_ids = []
+    game_date_map = {}
+    
+    for season_type in SEASON_TYPES:
+        gamefinder = leaguegamefinder.LeagueGameFinder(
+            season_nullable=season,
+            league_id_nullable="00",
+            season_type_nullable=season_type,
+            timeout=30,
+            headers=headers
+        )
+        games_df = gamefinder.get_data_frames()[0]
+
+        if games_df is not None and not games_df.empty:
+            # Get unique game IDs and dates
+            game_info = games_df[["GAME_ID", "GAME_DATE"]].drop_duplicates()
+            game_ids = game_info["GAME_ID"].tolist()
+            all_game_ids.extend(game_ids)
+            
+            # Build mapping of game_id -> game_date, season_type
+            for _, row in game_info.iterrows():
+                game_date_map[row["GAME_ID"]] = (row["GAME_DATE"], season_type)
+            
+            print(f"  {season_type}: {len(game_ids)} games")
+
+        time.sleep(RATE_LIMIT_DELAY)  # Brief delay between season-type requests
+
+    # Deduplicate game IDs while preserving order
+    unique_game_ids = list(dict.fromkeys(all_game_ids))
+    return unique_game_ids, game_date_map
+
+
+"""Fetch traditional box scores (player stats) for every game of the season."""
+def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
+    game_ids, game_date_map = get_all_game_ids_and_dates(season)
+    game_ids = game_ids[:TESTING_LIMIT]  # Limit for testing
+    print(f"Found {len(game_ids)} games for {season} season")
+
+    all_player_stats = []
+    failed_games = []
+
+    for i, game_id in enumerate(game_ids, 1):
+        try:
+            boxscore = boxscoretraditionalv3.BoxScoreTraditionalV3(game_id=game_id, headers=headers)
+
+            players_df = boxscore.player_stats.get_data_frame()
+            if players_df is not None and not players_df.empty:
+
+                drop_cols = ["teamCity", "teamTricode", "teamSlug", "playerSlug", "comment", "jerseyNum"]
+                players_df = players_df.drop(columns=[c for c in drop_cols if c in players_df.columns])
+                players_df = players_df.rename(columns={"familyName": "lastName"})
+
+                # Add opponent and opponent_id: the other team in this game
+                teams_in_game = players_df[["teamId", "teamName"]].drop_duplicates()
+                team_a_id, team_a_name = teams_in_game.iloc[0]
+                team_b_id, team_b_name = teams_in_game.iloc[1]
+
+                players_df["opponent"] = players_df["teamId"].map( #Logic: If teamId is Team A’s id → opponent name is Team B’s name.
+                    {team_a_id: team_b_name, team_b_id: team_a_name}
+                )
+                players_df["opponent_id"] = players_df["teamId"].map( #Logic: If teamId is Team A’s id → opponent id is Team B’s id.
+                    {team_a_id: team_b_id, team_b_id: team_a_id}
+                )
+                
+                # Add game date and season type
+                game_date, season_type = game_date_map.get(game_id, None)
+
+                players_df["game_date"] = game_date
+                players_df["season_type"] = season_type
+
+                # True Shooting %: PTS / (2 * (FGA + 0.44 * FTA)): When this player used a possession to shoot, how efficient were they?”
+                ts_denom = 2 * (players_df["fieldGoalsAttempted"] + 0.44 * players_df["freeThrowsAttempted"])
+                players_df["trueShootingPercentage"] = players_df["points"] / ts_denom.replace(0, float("nan"))
+
+                all_player_stats.append(players_df)
+
+            num_players = len(players_df) if players_df is not None else 0
+            print(f"  [{i}/{len(game_ids)}] Game {game_id}: {num_players} players")
+            
+        except Exception as e:
+            failed_games.append((game_id, str(e)))
+            print(f"  [{i}/{len(game_ids)}] Game {game_id}: FAILED - {e}")
+        time.sleep(RATE_LIMIT_DELAY)
+
+    if failed_games:
+        print(f"\nFailed to fetch {len(failed_games)} games: {failed_games}")
+
+    if not all_player_stats:
+        return pd.DataFrame()
+
+    return pd.concat(all_player_stats, ignore_index=True)
+
+
+if __name__ == "__main__":
+    box_scores = fetch_box_scores_for_season(SEASON)
+    print(f"\nTotal rows: {len(box_scores)}")
+    print(f"Columns: {list(box_scores.columns)}")
+    print(box_scores.head(10))
+
+    # Save to CSV
+    output_path = "data_pipeline/box_scores_2025_26.csv"
+    box_scores.to_csv(output_path, index=False)
+    print(f"\nSaved to {output_path}")
