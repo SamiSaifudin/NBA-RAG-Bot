@@ -3,8 +3,8 @@ import pandas as pd
 import time
 
 SEASON = "2025-26"
-RATE_LIMIT_DELAY = 3  # seconds between requests to avoid NBA API throttling
-TESTING_LIMIT = 10
+RATE_LIMIT_DELAY = 3
+TESTING_LIMIT = 100
 SEASON_TYPES = ("Regular Season", "Playoffs", "PlayIn")
 
 headers = {
@@ -16,7 +16,7 @@ headers = {
         'Connection': 'keep-alive',
 }
 
-"""Get all game IDs and dates for the given NBA season (Regular Season, Playoffs, PlayIn)."""
+# Get all game IDs and dates for the given NBA season (Regular Season, Playoffs, PlayIn).
 def get_all_game_ids_and_dates(season: str) -> tuple[list[str], dict[str, str]]:
     all_game_ids = []
     game_date_map = {}
@@ -43,14 +43,14 @@ def get_all_game_ids_and_dates(season: str) -> tuple[list[str], dict[str, str]]:
             
             print(f"  {season_type}: {len(game_ids)} games")
 
-        time.sleep(RATE_LIMIT_DELAY)  # Brief delay between season-type requests
+        time.sleep(RATE_LIMIT_DELAY)
 
     # Deduplicate game IDs while preserving order
     unique_game_ids = list(dict.fromkeys(all_game_ids))
     return unique_game_ids, game_date_map
 
 
-"""Fetch traditional box scores (player stats) for every game of the season."""
+# Fetch traditional box scores (player stats) for every game of the season.
 def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
     game_ids, game_date_map = get_all_game_ids_and_dates(season)
     game_ids = game_ids[:TESTING_LIMIT]  # Limit for testing
@@ -66,7 +66,7 @@ def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
             players_df = boxscore.player_stats.get_data_frame()
             if players_df is not None and not players_df.empty:
 
-                drop_cols = ["teamCity", "teamTricode", "teamSlug", "playerSlug", "comment", "jerseyNum"]
+                drop_cols = ["nameI", "teamCity", "teamTricode", "teamSlug", "playerSlug", "comment", "jerseyNum"]
                 players_df = players_df.drop(columns=[c for c in drop_cols if c in players_df.columns])
                 players_df = players_df.rename(columns={"familyName": "lastName"})
 
@@ -117,7 +117,6 @@ if __name__ == "__main__":
     print(f"Columns: {list(box_scores.columns)}")
     print(box_scores.head(10))
 
-    # Save to CSV
     output_path = "data_pipeline/box_scores_2025_26.csv"
     box_scores.to_csv(output_path, index=False)
     print(f"\nSaved to {output_path}")

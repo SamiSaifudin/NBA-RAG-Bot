@@ -1,23 +1,50 @@
+import os
 import pandas as pd
 import chromadb
+from datetime import datetime
 from sentence_transformers import SentenceTransformer
 
-csv_file = 'data_pipeline/box_scores_2025_26.csv'
-chroma_db_path = 'data_pipeline/chroma_db'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+COLLECTION_NAME = "nba_boxscores_6"
+csv_file = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
+chroma_db_path = os.path.join(BASE_DIR, "chroma_db")
 transformer_model = 'BAAI/bge-small-en-v1.5'
 
-# 1. Load the CSV
+# Helper function to format date: '2026-02-23' -> 'Monday, February 23rd, 2026'.
+def format_game_date(iso_date_str: str) -> str:
+    if not iso_date_str:
+        return ""
+    dt = datetime.strptime(iso_date_str, "%Y-%m-%d")
+
+    day = dt.day
+    # suffix logic
+    if 11 <= day <= 13:
+        suffix = "th"
+    else:
+        last_digit = day % 10
+        if last_digit == 1:
+            suffix = "st"
+        elif last_digit == 2:
+            suffix = "nd"
+        elif last_digit == 3:
+            suffix = "rd"
+        else:
+            suffix = "th"
+
+    return f"{dt.strftime('%A, %B')} {day}{suffix}, {dt.year}"
+
+# Load the CSV
 df = pd.read_csv(csv_file)
 print(f"Loaded {len(df)} rows")
 print(df.columns.tolist())
 
-# 2. Load embedding model
+# Load embedding model
 print("Loading embedding model...")
 model = SentenceTransformer(transformer_model)
 
-# 3. Convert each row to text
+# Convert each row to text
 def row_to_text(row):
-    name = row.get("nameI", f"{row.get('firstName', '')} {row.get('lastName', row.get('familyName', ''))}").strip()
+    name = f"{row.get('firstName', '')} {row.get('lastName', row.get('familyName', ''))}".strip()
     minutes = row.get("minutes") or "0"
 
     points = row.get("points", 0)
@@ -50,10 +77,15 @@ def row_to_text(row):
     team_name = row.get("teamName", "")
     opponent = row.get("opponent", "")
     game_id = row.get("gameId", "")
-    game_date = row.get("game_date", "")
+
+    raw_date = row.get("game_date", "")
+    game_date = format_game_date(raw_date)
+
     ts_pct = row.get("trueShootingPercentage")
     ts_str = f", TS% {ts_pct * 100:.1f}%" if ts_pct is not None and not pd.isna(ts_pct) else ""
 
+    print(f"{team_name} vs {opponent}")
+    
     return (
         f"{name} played for {team_name} vs {opponent} on {game_date} (game {game_id}). "
         f"In {minutes} minutes he scored {points} points: "
@@ -65,20 +97,20 @@ def row_to_text(row):
 
 df['text'] = df.apply(row_to_text, axis=1)
 
-# 4. Embed all chunks in one batch
+# Embed all chunks in one batch
 print("Embedding chunks...")
 embeddings = model.encode(df['text'].tolist(), show_progress_bar=True)
 
-# 5. Store in Chroma
+# Store in Chroma
 print("Storing in Chroma...")
 chroma = chromadb.PersistentClient(path=chroma_db_path)
-collection = chroma.get_or_create_collection("nba_boxscores")
+collection = chroma.get_or_create_collection(COLLECTION_NAME)
 
 collection.add(
     ids=df.index.astype(str).tolist(),
     documents=df['text'].tolist(),
     embeddings=embeddings.tolist(),
-    metadatas=df[['nameI', 'teamName', 'gameId']].to_dict('records')
+    metadatas=df[['firstName', 'lastName', 'teamName', 'gameId']].to_dict('records')
 )
 
 print(f"Done! {len(df)} chunks embedded and stored.")
