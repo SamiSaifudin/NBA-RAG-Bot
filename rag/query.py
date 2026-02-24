@@ -1,13 +1,14 @@
 import os
 import json
 import sqlite3
+import asyncio
 import chromadb
-from groq import Groq
+from groq import Groq, AsyncGroq
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
 load_dotenv()
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 model = SentenceTransformer('BAAI/bge-small-en-v1.5')
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -51,7 +52,7 @@ tools = [
     }
 ]
 
-def query_vector_db(query):
+async def query_vector_db(query):
     query_embedding = model.encode(query).tolist()
     results = collection.query(
         query_embeddings=[query_embedding],
@@ -59,7 +60,7 @@ def query_vector_db(query):
     )
     context = "\n".join(results['documents'][0])
     
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": "You are an NBA stats assistant. Answer using only the context provided. If the context does not explicitly mention the requested game or stats, say you don't know and do NOT invent stats or opponents."},
@@ -76,7 +77,7 @@ def query_sql_db(sql):
         return f"SQL error: {e}"
 
 
-def run_bot(question):
+async def run_bot(question):
     schema = """
     Table: boxscores
     Columns:
@@ -115,20 +116,29 @@ def run_bot(question):
     """
 
     # Router decides which tool to use
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": f"""You are an NBA stats assistant for the 2025-2026 season. 
-            Use 'query_sql_db' for any question that asks about stats over multiple games, uses phrases like 'this season', 'over his last X games', 'average', 'total', 'sum', 'per game', or compares multiple players or teams.”. 
-            Use 'query_vector_db' for descriptive questions when the user is clearly asking about one specific game (e.g. 'vs the Rockets on February 5th' or 'in that game'). If the time frame is a season, multiple games, or not clearly a single game, do not use this tool..
-            
-            You must use only the two provided tools, with exact names:
-            > - query_sql_db
-            > - query_vector_db
-            Do not invent or modify tool names
+            {"role": "system", "content": f"""You are an NBA stats assistant for the 2025-2026 season.
 
-            Here is the SQL database schema:
-            {schema}
+                You must always call exactly one of these two tools:
+
+                1. query_sql_db: Use for any question involving:
+                - Averages, totals, counts, or rankings
+                - Phrases like 'this season', 'average', 'total', 'per game'
+                - Stats across multiple games
+                - Comparing multiple players or teams
+
+                2. query_vector_db: Use ONLY when the user is asking about one specific game with a clear date or opponent mentioned (e.g. 'vs the Rockets on February 5th').
+
+                Rules:
+                - Always call a tool, never respond directly
+                - Use exact tool names: query_sql_db or query_vector_db
+                - Do not invent or modify tool names
+                - When in doubt, use query_sql_db
+
+                Database schema:
+                {schema}
             """},
             {"role": "user", "content": question}
         ],
@@ -148,9 +158,9 @@ def run_bot(question):
         raw_result = query_sql_db(args['sql'])
     elif tool_name.lower() == "query_vector_db":
         print(f"Routing to Vector DB: {args['query']}")
-        raw_result = query_vector_db(args['query'])
+        raw_result = await query_vector_db(args['query'])
     
-    final_response = client.chat.completions.create(
+    final_response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": "You are an NBA stats assistant. Answer the question naturally using the data provided."},
@@ -160,15 +170,19 @@ def run_bot(question):
     
     return final_response.choices[0].message.content
 
-if __name__ == "__main__":
+async def main():
     test_questions = [
         "How many points did Bam Adebayo score vs the Grizzlies on February 21st, 2026?",
         "What were LaMelo Ball's TS%% vs the Rockets last Thursday?",
         "What are LaMelo Ball's total points vs the Rockets this season?",
         "Which player scored the most total points this season?",
     ]
-
+    
     for q in test_questions:
-        print(f"\nQ: {q}")
-        print("A:", run_bot(q))
+        print(f"Q: {q}")
+        answer = await run_bot(q)
+        print(f"A: {answer}")
         print("-" * 80)
+
+if __name__ == "__main__":
+    asyncio.run(main())

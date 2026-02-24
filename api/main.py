@@ -1,0 +1,26 @@
+import os
+import sys
+from fastapi import FastAPI
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rag.query import run_bot
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+#Define shape of request body
+class QuestionRequest(BaseModel):
+    question: str
+
+@app.post("/ask")
+async def ask(request: QuestionRequest):
+    answer = await run_bot(request.question)
+    return {"answer": answer}
