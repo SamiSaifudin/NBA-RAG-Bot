@@ -1,6 +1,6 @@
-from nba_api.stats.endpoints import boxscoretraditionalv3, leaguegamefinder
-import pandas as pd
 import time
+import pandas as pd
+from nba_api.stats.endpoints import boxscoretraditionalv3, leaguegamefinder
 
 SEASON = "2025-26"
 RATE_LIMIT_DELAY = 3
@@ -45,7 +45,6 @@ def get_all_game_ids_and_dates(season: str) -> tuple[list[str], dict[str, str]]:
 
         time.sleep(RATE_LIMIT_DELAY)
 
-    # Deduplicate game IDs while preserving order
     unique_game_ids = list(dict.fromkeys(all_game_ids))
     return unique_game_ids, game_date_map
 
@@ -53,7 +52,7 @@ def get_all_game_ids_and_dates(season: str) -> tuple[list[str], dict[str, str]]:
 # Fetch traditional box scores (player stats) for every game of the season.
 def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
     game_ids, game_date_map = get_all_game_ids_and_dates(season)
-    game_ids = game_ids[:TESTING_LIMIT]  # Limit for testing
+    game_ids = game_ids[:TESTING_LIMIT]
     print(f"Found {len(game_ids)} games for {season} season")
 
     all_player_stats = []

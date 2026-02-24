@@ -1,6 +1,6 @@
 import os
-import pandas as pd
 import chromadb
+import pandas as pd
 from datetime import datetime
 from sentence_transformers import SentenceTransformer
 
@@ -17,7 +17,7 @@ def format_game_date(iso_date_str: str) -> str:
     dt = datetime.strptime(iso_date_str, "%Y-%m-%d")
 
     day = dt.day
-    # suffix logic
+    
     if 11 <= day <= 13:
         suffix = "th"
     else:
@@ -42,7 +42,6 @@ print(df.columns.tolist())
 print("Loading embedding model...")
 model = SentenceTransformer(transformer_model)
 
-# Convert each row to text
 def row_to_text(row):
     name = f"{row.get('firstName', '')} {row.get('lastName', row.get('familyName', ''))}".strip()
     minutes = row.get("minutes") or "0"
@@ -97,11 +96,9 @@ def row_to_text(row):
 
 df['text'] = df.apply(row_to_text, axis=1)
 
-# Embed all chunks in one batch
 print("Embedding chunks...")
 embeddings = model.encode(df['text'].tolist(), show_progress_bar=True)
 
-# Store in Chroma
 print("Storing in Chroma...")
 chroma = chromadb.PersistentClient(path=chroma_db_path)
 collection = chroma.get_or_create_collection(COLLECTION_NAME)

@@ -1,12 +1,11 @@
-import sqlite3
-import json
 import os
+import json
+import sqlite3
 import chromadb
-from sentence_transformers import SentenceTransformer
 from groq import Groq
 from dotenv import load_dotenv
+from sentence_transformers import SentenceTransformer
 
-# Initialize everything
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 model = SentenceTransformer('BAAI/bge-small-en-v1.5')
@@ -59,8 +58,6 @@ def query_vector_db(query):
         n_results=10
     )
     context = "\n".join(results['documents'][0])
-
-    print(context)
     
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -74,7 +71,6 @@ def query_vector_db(query):
 def query_sql_db(sql):
     try:
         result = conn.execute(sql).fetchall()
-        print(str(result))
         return str(result)
     except Exception as e:
         return f"SQL error: {e}"
@@ -113,16 +109,16 @@ def run_bot(question):
     - plusMinusPoints (float)
     - opponent (text)
     - opponent_id (text)
-    - game_date (text)
+    - game_date (text) Format: YYYY-MM-DD
     - season_type (text)
     - trueShootingPercentage (float)
     """
 
-    # Step 1: Router decides which tool to use
+    # Router decides which tool to use
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": f"""You are an NBA stats assistant. 
+            {"role": "system", "content": f"""You are an NBA stats assistant for the 2025-2026 season. 
             Use 'query_sql_db' for any question that asks about stats over multiple games, uses phrases like 'this season', 'over his last X games', 'average', 'total', 'sum', 'per game', or compares multiple players or teams.”. 
             Use 'query_vector_db' for descriptive questions when the user is clearly asking about one specific game (e.g. 'vs the Rockets on February 5th' or 'in that game'). If the time frame is a season, multiple games, or not clearly a single game, do not use this tool..
             
@@ -140,14 +136,13 @@ def run_bot(question):
         tool_choice="required"
     )
     
-    tool_call = response.choices[0].message.tool_calls[0] # Extracts the first tool call from the response
-    tool_name = tool_call.function.name # Gets the name of the tool the LLM picked
-    args = json.loads(tool_call.function.arguments) # Get the arguments created by the LLM (SQL or Vector DB Query)
+    tool_call = response.choices[0].message.tool_calls[0]
+    tool_name = tool_call.function.name
+    args = json.loads(tool_call.function.arguments)
     
     if tool_name not in VALID_TOOLS:
         raise ValueError(f"Unknown tool requested by model: {tool_name}")
 
-    # Run tool
     if tool_name.lower() == "query_sql_db":
         print(f"Routing to SQL: {args['sql']}")
         raw_result = query_sql_db(args['sql'])
@@ -155,7 +150,6 @@ def run_bot(question):
         print(f"Routing to Vector DB: {args['query']}")
         raw_result = query_vector_db(args['query'])
     
-    # Generate natural language answer
     final_response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
@@ -167,9 +161,14 @@ def run_bot(question):
     return final_response.choices[0].message.content
 
 if __name__ == "__main__":
-    #print(run_bot("How many points did Bam Adebayo score vs the Grizzlies?"))
-    #print(run_bot("What was KAT's average TS%% this season?"))
-    #print(run_bot("What is LeBron's FG% this season?")) GOOD
-    #print(run_bot("What is Lamelo's TS%% vs the Rockets on 2026-02-05?"))
-    #print(run_bot("What is Lamelo's TS% this season vs the Rockets?"))
-    print(run_bot("What was LaMelo's TS%% in his first game against the Rockets?"))
+    test_questions = [
+        "How many points did Bam Adebayo score vs the Grizzlies on February 21st, 2026?",
+        "What were LaMelo Ball's TS%% vs the Rockets last Thursday?",
+        "What are LaMelo Ball's total points vs the Rockets this season?",
+        "Which player scored the most total points this season?",
+    ]
+
+    for q in test_questions:
+        print(f"\nQ: {q}")
+        print("A:", run_bot(q))
+        print("-" * 80)
