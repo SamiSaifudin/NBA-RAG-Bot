@@ -209,8 +209,8 @@ __marimo__/
 .DS_Store
 
 # DB Stuff
-data_pipeline/nba.db
-data_pipeline/chroma_db/
+backend/data_pipeline/nba.db
+backend/data_pipeline/chroma_db/
 
 #CSV Data
-data_pipeline/*.csv
+backend/data_pipeline/*.csv

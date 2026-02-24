@@ -74,6 +74,7 @@ def query_sql_db(sql):
         result = conn.execute(sql).fetchall()
         return str(result)
     except Exception as e:
+        print(f"SQL error: {e}")
         return f"SQL error: {e}"
 
 
