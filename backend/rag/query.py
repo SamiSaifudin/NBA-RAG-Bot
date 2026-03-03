@@ -12,6 +12,7 @@ client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 model = SentenceTransformer('BAAI/bge-small-en-v1.5')
 
 CURRENT_SEASON = "2025-2026"
+COLLECTION_NAME = "nba_boxscores"
 VALID_TOOLS = {"query_sql_db", "query_vector_db"}
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -19,7 +20,7 @@ CHROMA_DB_PATH = os.path.join(BASE_DIR, "data_pipeline", "chroma_db")
 SQLITE_DB_PATH = os.path.join(BASE_DIR, "data_pipeline", "nba.db")
 
 chroma = chromadb.PersistentClient(path=CHROMA_DB_PATH)
-collection = chroma.get_or_create_collection("nba_boxscores_7")
+collection = chroma.get_or_create_collection(COLLECTION_NAME)
 conn = sqlite3.connect(SQLITE_DB_PATH)
 
 # Tools Definition

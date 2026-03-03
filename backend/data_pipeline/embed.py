@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime
 from sentence_transformers import SentenceTransformer
 
-COLLECTION_NAME = "nba_boxscores_7"
+COLLECTION_NAME = "nba_boxscores"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 csv_file = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
 chroma_db_path = os.path.join(BASE_DIR, "chroma_db")
@@ -100,6 +100,12 @@ embeddings = model.encode(df['text'].tolist(), show_progress_bar=True)
 
 print("Storing in Chroma...")
 chroma = chromadb.PersistentClient(path=chroma_db_path)
+
+try:
+    chroma.delete_collection(COLLECTION_NAME)
+except:
+    pass
+
 collection = chroma.get_or_create_collection(COLLECTION_NAME)
 
 collection.add(

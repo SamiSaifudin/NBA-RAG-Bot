@@ -1,3 +1,4 @@
+import os
 import time
 import pandas as pd
 from nba_api.stats.endpoints import boxscoretraditionalv3, leaguegamefinder
@@ -6,6 +7,7 @@ SEASON = "2025-26"
 RATE_LIMIT_DELAY = 3
 TESTING_LIMIT = 100
 SEASON_TYPES = ("Regular Season", "Playoffs", "PlayIn")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
@@ -32,12 +34,10 @@ def get_all_game_ids_and_dates(season: str) -> tuple[list[str], dict[str, str]]:
         games_df = gamefinder.get_data_frames()[0]
 
         if games_df is not None and not games_df.empty:
-            # Get unique game IDs and dates
             game_info = games_df[["GAME_ID", "GAME_DATE"]].drop_duplicates()
             game_ids = game_info["GAME_ID"].tolist()
             all_game_ids.extend(game_ids)
             
-            # Build mapping of game_id -> game_date, season_type
             for _, row in game_info.iterrows():
                 game_date_map[row["GAME_ID"]] = (row["GAME_DATE"], season_type)
             
@@ -69,7 +69,6 @@ def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
                 players_df = players_df.drop(columns=[c for c in drop_cols if c in players_df.columns])
                 players_df = players_df.rename(columns={"familyName": "lastName"})
 
-                # Add opponent and opponent_id: the other team in this game
                 teams_in_game = players_df[["teamId", "teamName"]].drop_duplicates()
                 team_a_id, team_a_name = teams_in_game.iloc[0]
                 team_b_id, team_b_name = teams_in_game.iloc[1]
@@ -81,7 +80,6 @@ def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
                     {team_a_id: team_b_id, team_b_id: team_a_id}
                 )
                 
-                # Add game date and season type
                 game_date, season_type = game_date_map.get(game_id, None)
 
                 players_df["game_date"] = game_date
@@ -116,6 +114,6 @@ if __name__ == "__main__":
     print(f"Columns: {list(box_scores.columns)}")
     print(box_scores.head(10))
 
-    output_path = "data_pipeline/box_scores_2025_26.csv"
+    output_path = os.path.join(BASE_DIR, "data_pipeline", "box_scores_2025_26.csv")
     box_scores.to_csv(output_path, index=False)
     print(f"\nSaved to {output_path}")
