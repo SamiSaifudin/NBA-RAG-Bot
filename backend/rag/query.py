@@ -3,7 +3,7 @@ import json
 import sqlite3
 import asyncio
 import chromadb
-from groq import Groq, AsyncGroq
+from groq import AsyncGroq
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
@@ -11,13 +11,15 @@ load_dotenv()
 client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 model = SentenceTransformer('BAAI/bge-small-en-v1.5')
 
+CURRENT_SEASON = "2025-2026"
+VALID_TOOLS = {"query_sql_db", "query_vector_db"}
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHROMA_DB_PATH = os.path.join(BASE_DIR, "data_pipeline", "chroma_db")
 SQLITE_DB_PATH = os.path.join(BASE_DIR, "data_pipeline", "nba.db")
-VALID_TOOLS = {"query_sql_db", "query_vector_db"}
 
 chroma = chromadb.PersistentClient(path=CHROMA_DB_PATH)
-collection = chroma.get_or_create_collection("nba_boxscores_6")
+collection = chroma.get_or_create_collection("nba_boxscores_7")
 conn = sqlite3.connect(SQLITE_DB_PATH)
 
 # Tools Definition
@@ -52,7 +54,7 @@ tools = [
     }
 ]
 
-async def query_vector_db(query):
+async def query_vector_db(query: str) -> str:
     query_embedding = model.encode(query).tolist()
     results = collection.query(
         query_embeddings=[query_embedding],
@@ -69,82 +71,109 @@ async def query_vector_db(query):
     )
     return response.choices[0].message.content
 
-def query_sql_db(sql):
+def query_sql_db(sql: str) -> str:
     try:
-        result = conn.execute(sql).fetchall()
+        sql = sql.replace("\\'", "''")
+        print(f"Executing SQL: {sql}")
+
+        cursor = conn.execute(sql)
+        columns = [description[0] for description in cursor.description]
+        rows = cursor.fetchall()
+        
+        result = [dict(zip(columns, row)) for row in rows]
+        print(f"SQL Result: {result}")
         return str(result)
     except Exception as e:
-        print(f"SQL error: {e}")
+        print(f"SQL Error: {e}")
         return f"SQL error: {e}"
 
 
-async def run_bot(question):
+async def run_bot(question: str, history: list[dict]) -> str:
     schema = """
     Table: boxscores
     Columns:
-    - gameId (text)
-    - teamId (text)
-    - teamName (text)
-    - personId (text)
-    - firstName (text)
-    - lastName (text)
-    - position (text)
-    - minutes (text)
-    - fieldGoalsMade (integer)
-    - fieldGoalsAttempted (integer)
-    - fieldGoalsPercentage (float)
-    - threePointersMade (integer)
-    - threePointersAttempted (integer)
-    - threePointersPercentage (float)
-    - freeThrowsMade (integer)
-    - freeThrowsAttempted (integer)
-    - freeThrowsPercentage (float)
-    - reboundsOffensive (integer)
-    - reboundsDefensive (integer)
-    - reboundsTotal (integer)
-    - assists (integer)
-    - steals (integer)
-    - blocks (integer)
-    - turnovers (integer)
-    - foulsPersonal (integer)
-    - points (integer)
-    - plusMinusPoints (float)
-    - opponent (text)
-    - opponent_id (text)
-    - game_date (text) Format: YYYY-MM-DD
-    - season_type (text)
-    - trueShootingPercentage (float)
+    - gameId (text), Example: 0022500825
+    - teamId (text), Example: 1610612741
+    - teamName (text), Example: Bulls
+    - personId (text), Example: 1630171
+    - firstName (text), Example: Isaac
+    - lastName (text), Example: Okoro
+    - position (text), Example: F
+    - minutes (text), Example: 33:00
+    - fieldGoalsMade (integer), Example: 4
+    - fieldGoalsAttempted (integer), Example: 10
+    - fieldGoalsPercentage (float), Example: 0.4
+    - threePointersMade (integer), Example: 3
+    - threePointersAttempted (integer), Example: 7
+    - threePointersPercentage (float), Example: 0.429
+    - freeThrowsMade (integer), Example: 1
+    - freeThrowsAttempted (integer), Example: 1
+    - freeThrowsPercentage (float), Example: 1.0
+    - reboundsOffensive (integer), Example: 3
+    - reboundsDefensive (integer), Example: 3
+    - reboundsTotal (integer), Example: 6
+    - assists (integer), Example: 1
+    - steals (integer), Example: 1
+    - blocks (integer), Example: 0
+    - turnovers (integer), Example: 2
+    - foulsPersonal (integer), Example: 3
+    - points (integer), Example: 12
+    - plusMinusPoints (float), Example: -15.0
+    - opponent (text), Example: Knicks
+    - opponent_id (text), Example: 1610612752
+    - game_date (text), Example: 2026-02-22
+    - season_type (text), Example: Regular Season
+    - trueShootingPercentage (float), Example: 0.574712643678161
     """
 
     # Router decides which tool to use
     response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": f"""You are an NBA stats assistant for the 2025-2026 season.
+            {"role": "system", "content": f"""You are an NBA stats assistant for the {CURRENT_SEASON} season.
 
                 You must always call exactly one of these two tools:
 
-                1. query_sql_db: Use for any question involving:
+                1. query_sql_db: 
+                Use for any question involving:
                 - Averages, totals, counts, or rankings
                 - Phrases like 'this season', 'average', 'total', 'per game'
                 - Stats across multiple games
                 - Comparing multiple players or teams
 
-                2. query_vector_db: Use ONLY when the user is asking about one specific game with a clear date or opponent mentioned (e.g. 'vs the Rockets on February 5th').
+                2. query_vector_db: 
+                - Use ONLY when the user is asking about one specific game AND a specific player with a clear date or opponent mentioned (e.g. 'vs the Rockets on February 5th').
+
+                SQL Rules:
+                - Always SELECT all relevant columns needed to fully answer the question, never just SELECT a single column
+                - For player performance questions always include: game_date, opponent, points, assists, reboundsTotal, fieldGoalsPercentage, threePointersPercentage, freeThrowsPercentage, trueShootingPercentage, plusMinusPoints
+                - Percentages are stored as floats (e.g. 0.55 = 55%)
 
                 Rules:
+                - Tool names must not contain any whitespace, tabs, or special characters
+                - Use exact tool names: query_sql_db and query_vector_db
                 - Always call a tool, never respond directly
-                - Use exact tool names: query_sql_db or query_vector_db
-                - Do not invent or modify tool names
                 - When in doubt, use query_sql_db
+
+                If the user asks a follow up question, use the conversation history to understand what they are referring to before deciding which tool to use.
+
+                IMPORTANT: Use the tool name EXACTLY as written above. No parentheses, no equals signs, no extra characters.
+
+                Example Vector DB Entry:
+                Victor Wembanyama played for Spurs vs Kings on Sunday, February 21st, 2026 (game 0022500815). 
+                In 29:45 minutes he scored 28 points: FG 11/20 (55.0%), 3PT 1/5 (20.0%), FT 5/7 (71.4%), True Shooting: 60.7%. 
+                He had 15 rebounds (1 offensive, 14 defensive), 6 assists, 1 steal, 4 blocks, 1 turnover, 3 fouls. 
+                +/-: 32.0.
 
                 Database schema:
                 {schema}
             """},
+            *history,
             {"role": "user", "content": question}
         ],
         tools=tools,
-        tool_choice="required"
+        tool_choice="required",
+        parallel_tool_calls=False
     )
     
     tool_call = response.choices[0].message.tool_calls[0]
@@ -164,7 +193,8 @@ async def run_bot(question):
     final_response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": "You are an NBA stats assistant. Answer the question naturally using the data provided."},
+            {"role": "system", "content": "You are an NBA stats assistant. Answer the question naturally using the data provided. If the question is a follow up, use the conversation history for context."},
+            *history,
             {"role": "user", "content": f"Question: {question}\nData: {raw_result}"}
         ]
     )

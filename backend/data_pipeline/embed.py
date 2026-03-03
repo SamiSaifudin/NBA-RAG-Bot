@@ -4,8 +4,8 @@ import pandas as pd
 from datetime import datetime
 from sentence_transformers import SentenceTransformer
 
+COLLECTION_NAME = "nba_boxscores_7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-COLLECTION_NAME = "nba_boxscores_6"
 csv_file = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
 chroma_db_path = os.path.join(BASE_DIR, "chroma_db")
 transformer_model = 'BAAI/bge-small-en-v1.5'
@@ -42,7 +42,7 @@ print(df.columns.tolist())
 print("Loading embedding model...")
 model = SentenceTransformer(transformer_model)
 
-def row_to_text(row):
+def row_to_text(row: pd.Series) -> str:
     name = f"{row.get('firstName', '')} {row.get('lastName', row.get('familyName', ''))}".strip()
     minutes = row.get("minutes") or "0"
 
@@ -57,15 +57,15 @@ def row_to_text(row):
 
     fouls = row.get("foulsPersonal", 0)
 
-    fg_pct = row.get("fieldGoalsPercentage", 0)
+    fg_pct = (row.get("fieldGoalsPercentage") or 0) * 100
     fg_made = row.get("fieldGoalsMade", 0)
     fg_att = row.get("fieldGoalsAttempted", 0)
 
-    fg3_pct = row.get("threePointersPercentage", 0)
+    fg3_pct = (row.get("threePointersPercentage", 0) or 0) * 100
     fg3_made = row.get("threePointersMade", 0)
     fg3_att = row.get("threePointersAttempted", 0)
 
-    ft_pct = row.get("freeThrowsPercentage", 0)
+    ft_pct = (row.get("freeThrowsPercentage", 0) or 0) * 100
     ft_made = row.get("freeThrowsMade", 0)
     ft_att = row.get("freeThrowsAttempted", 0)
 
@@ -80,15 +80,14 @@ def row_to_text(row):
     raw_date = row.get("game_date", "")
     game_date = format_game_date(raw_date)
 
-    ts_pct = row.get("trueShootingPercentage")
-    ts_str = f", TS% {ts_pct * 100:.1f}%" if ts_pct is not None and not pd.isna(ts_pct) else ""
+    ts_pct = (row.get("trueShootingPercentage") or 0) * 100
 
     print(f"{team_name} vs {opponent}")
     
     return (
         f"{name} played for {team_name} vs {opponent} on {game_date} (game {game_id}). "
         f"In {minutes} minutes he scored {points} points: "
-        f"FG {fg_made}/{fg_att} ({fg_pct}%), 3PT {fg3_made}/{fg3_att} ({fg3_pct}%), FT {ft_made}/{ft_att} ({ft_pct}%), True Shooting: {ts_str}. "
+        f"FG {fg_made}/{fg_att} ({fg_pct:.1f}%), 3PT {fg3_made}/{fg3_att} ({fg3_pct:.1f}%), FT {ft_made}/{ft_att} ({ft_pct:.1f}%), True Shooting: {ts_pct:.1f}%. "
         f"He had {total_rebounds} rebounds ({offensive_rebounds} offensive, {defensive_rebounds} defensive), "
         f"{assists} assists, {steals} steals, {blocks} blocks, {turnovers} turnovers, {fouls} fouls. "
         f"+/-: {plus_minus}."

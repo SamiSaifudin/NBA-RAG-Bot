@@ -214,3 +214,9 @@ backend/data_pipeline/chroma_db/
 
 #CSV Data
 backend/data_pipeline/*.csv
+
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.production

@@ -19,8 +19,9 @@ app.add_middleware(
 #Define shape of request body
 class QuestionRequest(BaseModel):
     question: str
+    history: list = []
 
 @app.post("/ask")
 async def ask(request: QuestionRequest):
-    answer = await run_bot(request.question)
+    answer = await run_bot(request.question, request.history)
     return {"answer": answer}
