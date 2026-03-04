@@ -1,5 +1,6 @@
 import os
 import time
+import boto3
 import pandas as pd
 from nba_api.stats.endpoints import boxscoretraditionalv3, leaguegamefinder
 
@@ -107,6 +108,11 @@ def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
 
     return pd.concat(all_player_stats, ignore_index=True)
 
+def upload_to_s3(local_path):
+    s3 = boto3.client('s3')
+    bucket = os.getenv('S3_BUCKET_NAME')
+    s3.upload_file(local_path, bucket, 'box_scores_2025_26.csv')
+    print(f"Uploaded to S3 successfully")
 
 if __name__ == "__main__":
     box_scores = fetch_box_scores_for_season(SEASON)
@@ -117,3 +123,4 @@ if __name__ == "__main__":
     output_path = os.path.join(BASE_DIR, "data_pipeline", "box_scores_2025_26.csv")
     box_scores.to_csv(output_path, index=False)
     print(f"\nSaved to {output_path}")
+    upload_to_s3(output_path)
