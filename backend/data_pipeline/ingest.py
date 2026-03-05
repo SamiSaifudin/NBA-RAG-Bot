@@ -2,11 +2,14 @@ import os
 import time
 import boto3
 import pandas as pd
+from dotenv import load_dotenv
 from nba_api.stats.endpoints import boxscoretraditionalv3, leaguegamefinder
+
+load_dotenv()
 
 SEASON = "2025-26"
 RATE_LIMIT_DELAY = 3
-TESTING_LIMIT = 100
+TESTING_LIMIT = 10
 SEASON_TYPES = ("Regular Season", "Playoffs", "PlayIn")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -110,8 +113,7 @@ def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
 
 def upload_to_s3(local_path):
     s3 = boto3.client('s3')
-    bucket = os.getenv('S3_BUCKET_NAME')
-    s3.upload_file(local_path, bucket, 'box_scores_2025_26.csv')
+    s3.upload_file(local_path, os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv')
     print(f"Uploaded to S3 successfully")
 
 if __name__ == "__main__":

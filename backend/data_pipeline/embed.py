@@ -1,14 +1,33 @@
 import os
+import boto3
 import chromadb
 import pandas as pd
 from datetime import datetime
+from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
+
+load_dotenv()
 
 COLLECTION_NAME = "nba_boxscores"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-csv_file = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
+CSV_PATH = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
+
 chroma_db_path = os.path.join(BASE_DIR, "chroma_db")
 transformer_model = 'BAAI/bge-small-en-v1.5'
+
+if not os.path.exists(CSV_PATH):
+    s3 = boto3.client(
+        's3',
+        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+        region_name=os.getenv('AWS_REGION')
+    )
+
+    print("CSV not found locally, downloading from S3...")
+    s3.download_file(os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv', CSV_PATH)
+    print("Downloaded successfully")
+else:
+    print("Using local CSV")
 
 # Helper function to format date: '2026-02-23' -> 'Monday, February 23rd, 2026'.
 def format_game_date(iso_date_str: str) -> str:
@@ -34,7 +53,7 @@ def format_game_date(iso_date_str: str) -> str:
     return f"{dt.strftime('%A, %B')} {day}{suffix}, {dt.year}"
 
 # Load the CSV
-df = pd.read_csv(csv_file)
+df = pd.read_csv(CSV_PATH)
 print(f"Loaded {len(df)} rows")
 print(df.columns.tolist())
 
