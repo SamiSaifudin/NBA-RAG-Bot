@@ -5,6 +5,7 @@ import asyncio
 import chromadb
 from groq import AsyncGroq
 from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
 from sentence_transformers import SentenceTransformer
 
 load_dotenv()
@@ -77,13 +78,16 @@ def query_sql_db(sql: str) -> str:
         sql = sql.replace("\\'", "''")
         print(f"Executing SQL: {sql}")
 
-        cursor = conn.execute(sql)
-        columns = [description[0] for description in cursor.description]
-        rows = cursor.fetchall()
-        
-        result = [dict(zip(columns, row)) for row in rows]
-        print(f"SQL Result: {result}")
-        return str(result)
+        engine = create_engine(os.getenv('DATABASE_URL'))
+
+        with engine.connect() as conn:
+            cursor = conn.execute(text(sql))
+            columns = list(cursor.keys())
+            rows = cursor.fetchall()
+            result = [dict(zip(columns, row)) for row in rows]
+            print(f"SQL Result: {result}")
+            return str(result)
+
     except Exception as e:
         print(f"SQL Error: {e}")
         return f"SQL error: {e}"
@@ -168,6 +172,8 @@ async def run_bot(question: str, history: list[dict]) -> str:
 
                 Database schema:
                 {schema}
+
+                Always wrap column names in double quotes since Postgres is case sensitive (e.g. "firstName", "teamName")
             """},
             *history,
             {"role": "user", "content": question}

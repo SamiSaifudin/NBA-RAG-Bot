@@ -1,8 +1,8 @@
 import os
 import boto3
-import sqlite3
 import pandas as pd
 from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
 
 load_dotenv()
 
@@ -26,8 +26,24 @@ else:
     print("Using local CSV")
 
 df = pd.read_csv(CSV_PATH)
-conn = sqlite3.connect(DB_PATH)
-df.to_sql('boxscores', conn, if_exists='replace', index=False)
-conn.close()
 
-print(f"Loaded {len(df)} rows into boxscores table.")
+engine = create_engine(os.getenv('DATABASE_URL'))
+
+# Check for existing IDs
+try:
+    with engine.connect() as conn:
+        result = conn.execute(text('SELECT DISTINCT "gameId" FROM boxscores')) #('0022500001', 28, ....)
+        existing_ids = [row[0] for row in result]
+        new_rows = df[~df['gameId'].isin(existing_ids)]
+        print(f"Found {len(existing_ids)} existing rows, {len(new_rows)} new rows")
+except Exception as e:
+    print(f"Table doesn't exist yet, inserting all rows: {e}")
+    new_rows = df
+
+# Insert in a separate connection
+if not new_rows.empty:
+    with engine.begin() as conn:
+        new_rows.to_sql('boxscores', conn, if_exists='append', index=False)
+        print(f"Inserted {len(new_rows)} new rows")
+else:
+    print("No new games to insert")
