@@ -9,7 +9,7 @@ load_dotenv()
 
 SEASON = "2025-26"
 RATE_LIMIT_DELAY = 3
-TESTING_LIMIT = 10
+TESTING_LIMIT = 25
 SEASON_TYPES = ("Regular Season", "Playoffs", "PlayIn")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -111,6 +111,7 @@ def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
 
     return pd.concat(all_player_stats, ignore_index=True)
 
+# Upload the csv file to S3 bucket
 def upload_to_s3(local_path):
     s3 = boto3.client('s3')
     s3.upload_file(local_path, os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv')

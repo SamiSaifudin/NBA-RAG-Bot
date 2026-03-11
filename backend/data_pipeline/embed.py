@@ -1,35 +1,23 @@
 import os
 import boto3
-import chromadb
 import pandas as pd
 from datetime import datetime
+from pinecone import Pinecone
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 
-COLLECTION_NAME = "nba_boxscores"
+FETCH_BATCH_SIZE = 1000
+UPSERT_BATCH_SIZE = 100
+TRANSFORMER_MODEL = 'BAAI/bge-small-en-v1.5'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
 
-chroma_db_path = os.path.join(BASE_DIR, "chroma_db")
-transformer_model = 'BAAI/bge-small-en-v1.5'
+pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
+index = pc.Index('clutchquery')
 
-if not os.path.exists(CSV_PATH):
-    s3 = boto3.client(
-        's3',
-        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-        region_name=os.getenv('AWS_REGION')
-    )
-
-    print("CSV not found locally, downloading from S3...")
-    s3.download_file(os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv', CSV_PATH)
-    print("Downloaded successfully")
-else:
-    print("Using local CSV")
-
-# Helper function to format date: '2026-02-23' -> 'Monday, February 23rd, 2026'.
+# format date: '2026-02-23' -> 'Monday, February 23rd, 2026'.
 def format_game_date(iso_date_str: str) -> str:
     if not iso_date_str:
         return ""
@@ -52,15 +40,7 @@ def format_game_date(iso_date_str: str) -> str:
 
     return f"{dt.strftime('%A, %B')} {day}{suffix}, {dt.year}"
 
-# Load the CSV
-df = pd.read_csv(CSV_PATH)
-print(f"Loaded {len(df)} rows")
-print(df.columns.tolist())
-
-# Load embedding model
-print("Loading embedding model...")
-model = SentenceTransformer(transformer_model)
-
+# Converts row to text so we can embed
 def row_to_text(row: pd.Series) -> str:
     name = f"{row.get('firstName', '')} {row.get('lastName', row.get('familyName', ''))}".strip()
     minutes = row.get("minutes") or "0"
@@ -100,8 +80,6 @@ def row_to_text(row: pd.Series) -> str:
     game_date = format_game_date(raw_date)
 
     ts_pct = (row.get("trueShootingPercentage") or 0) * 100
-
-    print(f"{team_name} vs {opponent}")
     
     return (
         f"{name} played for {team_name} vs {opponent} on {game_date} (game {game_id}). "
@@ -112,26 +90,76 @@ def row_to_text(row: pd.Series) -> str:
         f"+/-: {plus_minus}."
     )
 
+# Download from S3 if CSV doesn't exist locally
+if not os.path.exists(CSV_PATH):
+    s3 = boto3.client(
+        's3',
+        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+        region_name=os.getenv('AWS_REGION')
+    )
+
+    print("CSV not found locally, downloading from S3...")
+    s3.download_file(os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv', CSV_PATH)
+    print("Downloaded successfully")
+else:
+    print("Using local CSV")
+
+# Load the CSV
+df = pd.read_csv(CSV_PATH)
+print(f"Loaded {len(df)} rows")
+print(df.columns.tolist())
+
+# Load embedding model
+print("Loading embedding model...")
+model = SentenceTransformer(TRANSFORMER_MODEL)
+
 df['text'] = df.apply(row_to_text, axis=1)
+df['vector_id'] = df['gameId'].astype(str) + "_" + df['personId'].astype(str)
 
-print("Embedding chunks...")
-embeddings = model.encode(df['text'].tolist(), show_progress_bar=True)
+# Fetch existing IDs from Pinecone
+existing_ids = set()
+stats = index.describe_index_stats()
+if stats['total_vector_count'] > 0:
+    
+    all_ids = df['vector_id'].tolist()
+    for i in range(0, len(all_ids), FETCH_BATCH_SIZE):
+        batch_ids = all_ids[i:i+FETCH_BATCH_SIZE]
+        fetch_result = index.fetch(ids=batch_ids)
+        existing_ids.update(fetch_result['vectors'].keys())
+    
+    new_rows = df[~df['vector_id'].isin(existing_ids)]
+    print(f"Found {len(existing_ids)} existing vectors, {len(new_rows)} new rows to embed")
+else:
+    new_rows = df
+    print(f"Index is empty, embedding all {len(new_rows)} rows")
 
-print("Storing in Chroma...")
-chroma = chromadb.PersistentClient(path=chroma_db_path)
+# Upsert to Pinecone
+if len(new_rows) > 0:
+    print("Embedding and uploading to Pinecone...")
+    for i in range(0, len(df), UPSERT_BATCH_SIZE):
+        batch = new_rows.iloc[i:i+UPSERT_BATCH_SIZE]
+        embeddings = model.encode(batch['text'].tolist()).tolist()
+        
+        vectors = [
+            {
+                "id": str(row['vector_id']),
+                "values": embeddings[j],
+                "metadata": {
+                    "text": row['text'],
+                    "firstName": str(row['firstName']),
+                    "lastName": str(row['lastName']),
+                    "teamName": str(row['teamName']),
+                    "game_date": str(row['game_date']),
+                    "opponent": str(row['opponent'])
+                }
+            }
+            for j, (_, row) in enumerate(batch.iterrows())
+        ]
 
-try:
-    chroma.delete_collection(COLLECTION_NAME)
-except:
-    pass
+        index.upsert(vectors=vectors)
+        print(f"Uploaded batch {i} to {min(i+UPSERT_BATCH_SIZE, len(df))}")
 
-collection = chroma.get_or_create_collection(COLLECTION_NAME)
-
-collection.add(
-    ids=df.index.astype(str).tolist(),
-    documents=df['text'].tolist(),
-    embeddings=embeddings.tolist(),
-    metadatas=df[['firstName', 'lastName', 'teamName', 'gameId']].to_dict('records')
-)
-
-print(f"Done! {len(df)} chunks embedded and stored.")
+    print(f"Done! {len(new_rows)} chunks embedded and stored in Pinecone.")
+else:
+    print(f"No new rows to upsert.")

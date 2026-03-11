@@ -16,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#Define shape of request body
+# Define shape of request body
 class QuestionRequest(BaseModel):
     question: str
     history: list = []

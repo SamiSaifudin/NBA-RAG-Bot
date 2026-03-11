@@ -1,9 +1,8 @@
 import os
 import json
-import sqlite3
 import asyncio
-import chromadb
 from groq import AsyncGroq
+from pinecone import Pinecone
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sentence_transformers import SentenceTransformer
@@ -13,16 +12,10 @@ client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 model = SentenceTransformer('BAAI/bge-small-en-v1.5')
 
 CURRENT_SEASON = "2025-2026"
-COLLECTION_NAME = "nba_boxscores"
 VALID_TOOLS = {"query_sql_db", "query_vector_db"}
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHROMA_DB_PATH = os.path.join(BASE_DIR, "data_pipeline", "chroma_db")
-SQLITE_DB_PATH = os.path.join(BASE_DIR, "data_pipeline", "nba.db")
-
-chroma = chromadb.PersistentClient(path=CHROMA_DB_PATH)
-collection = chroma.get_or_create_collection(COLLECTION_NAME)
-conn = sqlite3.connect(SQLITE_DB_PATH)
+pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
+index = pc.Index('clutchquery')
 
 # Tools Definition
 tools = [
@@ -58,11 +51,16 @@ tools = [
 
 async def query_vector_db(query: str) -> str:
     query_embedding = model.encode(query).tolist()
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=10
+
+    results = index.query(
+        vector=query_embedding,
+        top_k=10,
+        include_metadata=True
     )
-    context = "\n".join(results['documents'][0])
+
+    context = "\n".join([match['metadata']['text'] for match in results['matches']])
+
+    print(context)
     
     response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -210,7 +208,7 @@ async def run_bot(question: str, history: list[dict]) -> str:
 
 async def main():
     test_questions = [
-        "How many points did Bam Adebayo score vs the Grizzlies on February 21st, 2026?",
+        "How many points did Bam Adebayo score vs the Wizards on March 10th, 2026?",
         "What were LaMelo Ball's TS%% vs the Rockets last Thursday?",
         "What are LaMelo Ball's total points vs the Rockets this season?",
         "Which player scored the most total points this season?",
