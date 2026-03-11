@@ -16,6 +16,7 @@ VALID_TOOLS = {"query_sql_db", "query_vector_db"}
 
 pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 index = pc.Index('clutchquery')
+engine = create_engine(os.getenv('DATABASE_URL'))
 
 # Tools Definition
 tools = [
@@ -75,8 +76,6 @@ def query_sql_db(sql: str) -> str:
     try:
         sql = sql.replace("\\'", "''")
         print(f"Executing SQL: {sql}")
-
-        engine = create_engine(os.getenv('DATABASE_URL'))
 
         with engine.connect() as conn:
             cursor = conn.execute(text(sql))
