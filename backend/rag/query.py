@@ -5,11 +5,9 @@ from groq import AsyncGroq
 from pinecone import Pinecone
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
-from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-model = SentenceTransformer('BAAI/bge-small-en-v1.5')
 
 CURRENT_SEASON = "2025-2026"
 VALID_TOOLS = {"query_sql_db", "query_vector_db"}
@@ -51,7 +49,12 @@ tools = [
 ]
 
 async def query_vector_db(query: str) -> str:
-    query_embedding = model.encode(query).tolist()
+    embedding = pc.inference.embed(
+        model="multilingual-e5-large",
+        inputs=[query],
+        parameters={"input_type": "query"}
+    )
+    query_embedding = embedding[0]['values']
 
     results = index.query(
         vector=query_embedding,

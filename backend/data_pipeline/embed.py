@@ -4,12 +4,11 @@ import pandas as pd
 from datetime import datetime
 from pinecone import Pinecone
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 
 FETCH_BATCH_SIZE = 1000
-UPSERT_BATCH_SIZE = 100
+UPSERT_BATCH_SIZE = 90
 TRANSFORMER_MODEL = 'BAAI/bge-small-en-v1.5'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
@@ -110,9 +109,6 @@ df = pd.read_csv(CSV_PATH)
 print(f"Loaded {len(df)} rows")
 print(df.columns.tolist())
 
-# Load embedding model
-print("Loading embedding model...")
-model = SentenceTransformer(TRANSFORMER_MODEL)
 
 df['text'] = df.apply(row_to_text, axis=1)
 df['vector_id'] = df['gameId'].astype(str) + "_" + df['personId'].astype(str)
@@ -139,7 +135,14 @@ if len(new_rows) > 0:
     print("Embedding and uploading to Pinecone...")
     for i in range(0, len(df), UPSERT_BATCH_SIZE):
         batch = new_rows.iloc[i:i+UPSERT_BATCH_SIZE]
-        embeddings = model.encode(batch['text'].tolist()).tolist()
+        
+        embeddings = pc.inference.embed(
+            model="multilingual-e5-large",
+            inputs=batch['text'].tolist(),
+            parameters={"input_type": "passage"}
+        )
+        
+        embeddings = [e['values'] for e in embeddings]
         
         vectors = [
             {
