@@ -132,6 +132,7 @@ async def run_bot(question: str, history: list[dict]) -> str:
     """
 
     # Router decides which tool to use
+    # TODO: Make vector queries use actual dates not "Yesterday" or "Last Week"
     response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[

@@ -32,7 +32,7 @@ function App() {
     setLoading(true)
 
     try {
-      const response = await fetch("http://localhost:8000/ask", {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question, history })
