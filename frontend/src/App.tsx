@@ -61,6 +61,7 @@ function App() {
 
   return (
     <div className="container">
+      <title>ClutchQuery</title>
       <div className="header">
         <h1>ClutchQuery</h1>
         <p className="subtitle">2025-26 NBA Season Stats</p>
