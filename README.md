@@ -28,7 +28,7 @@ User Question
 - **FastAPI** — REST API with a single `/ask` endpoint
 - **Groq (Llama 3.3 70B)** — LLM for routing, SQL generation, and answer generation
 - **Pinecone** — Vector database for semantic search on individual game descriptions
-- **Supabase (PostgreSQL)** — Relational database for aggregation queries
+- **PostgreSQL** — Relational database for aggregation queries
 
 ## Tech Stack
  
@@ -36,7 +36,7 @@ User Question
 |---|---|
 | LLM | Groq (Llama 3.3 70B) |
 | Vector DB | Pinecone |
-| Relational DB | Supabase (PostgreSQL) |
+| Relational DB | PostgreSQL |
 | Embeddings | Pinecone multilingual-e5-large |
 | Backend | FastAPI |
 | Frontend | React + TypeScript |
