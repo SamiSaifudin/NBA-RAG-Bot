@@ -3,6 +3,7 @@ import json
 import asyncio
 from groq import AsyncGroq
 from pinecone import Pinecone
+from datetime import datetime
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
@@ -131,12 +132,14 @@ async def run_bot(question: str, history: list[dict]) -> str:
     - trueShootingPercentage (float), Example: 0.574712643678161
     """
 
+    today = datetime.now()
+    current_date = today.strftime("%A, %B %d, %Y")
+
     # Router decides which tool to use
-    # TODO: Make vector queries use actual dates not "Yesterday" or "Last Week"
     response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": f"""You are an NBA stats assistant for the {CURRENT_SEASON} season.
+            {"role": "system", "content": f"""You are an NBA stats assistant for the {CURRENT_SEASON} season. Today's date is {current_date}.
 
                 You must always call exactly one of these two tools:
 
@@ -155,7 +158,10 @@ async def run_bot(question: str, history: list[dict]) -> str:
                 - For player performance questions always include: game_date, opponent, points, assists, reboundsTotal, fieldGoalsPercentage, threePointersPercentage, freeThrowsPercentage, trueShootingPercentage, plusMinusPoints
                 - Percentages are stored as floats (e.g. 0.55 = 55%)
 
-                Rules:
+                Vector DB Rules:
+                - Convert relative date references to actual dates. i.e., "yesterday" → the actual date
+
+                General Rules:
                 - Tool names must not contain any whitespace, tabs, or special characters
                 - Use exact tool names: query_sql_db and query_vector_db
                 - Always call a tool, never respond directly
@@ -165,7 +171,7 @@ async def run_bot(question: str, history: list[dict]) -> str:
 
                 IMPORTANT: Use the tool name EXACTLY as written above. No parentheses, no equals signs, no extra characters.
 
-                Example Vector DB Entry:
+                Example Vector DB Entry (ALL VECTOR DB ROWS LOOK LIKE THIS):
                 Victor Wembanyama played for Spurs vs Kings on Sunday, February 21st, 2026 (game 0022500815). 
                 In 29:45 minutes he scored 28 points: FG 11/20 (55.0%), 3PT 1/5 (20.0%), FT 5/7 (71.4%), True Shooting: 60.7%. 
                 He had 15 rebounds (1 offensive, 14 defensive), 6 assists, 1 steal, 4 blocks, 1 turnover, 3 fouls. 
@@ -201,7 +207,7 @@ async def run_bot(question: str, history: list[dict]) -> str:
     final_response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": "You are an NBA stats assistant. Answer the question naturally using the data provided. If the question is a follow up, use the conversation history for context."},
+            {"role": "system", "content": "You are an NBA stats assistant. Answer the question naturally using the data provided. If the question is a follow up, use the conversation history for context. BE CONCISE!"},
             *history,
             {"role": "user", "content": f"Question: {question}\nData: {raw_result}"}
         ]

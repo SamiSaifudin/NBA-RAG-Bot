@@ -3,15 +3,31 @@ import time
 import boto3
 import pandas as pd
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 from nba_api.stats.endpoints import boxscoretraditionalv3, leaguegamefinder
 
 load_dotenv()
 
 SEASON = "2025-26"
 RATE_LIMIT_DELAY = 3
-TESTING_LIMIT = 25
+TESTING_LIMIT = 10
 SEASON_TYPES = ("Regular Season", "Playoffs", "PlayIn")
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_PATH = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
+
+s3 = boto3.client(
+    's3',
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.getenv('AWS_REGION')
+)
+
+if not os.path.exists(CSV_PATH):
+    print("CSV not found locally, downloading from S3...")
+    s3.download_file(os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv', CSV_PATH)
+    print("Downloaded successfully")
+else:
+    print("Using local CSV")
 
 headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
@@ -22,17 +38,21 @@ headers = {
         'Connection': 'keep-alive',
 }
 
-# Get all game IDs and dates for the given NBA season (Regular Season, Playoffs, PlayIn).
+# Get all game IDs and dates for yesterday's NBA games (Regular Season, Playoffs, PlayIn)
 def get_all_game_ids_and_dates(season: str) -> tuple[list[str], dict[str, str]]:
     all_game_ids = []
     game_date_map = {}
     
+    yesterday = (datetime.now() - timedelta(days=1)).strftime('%m/%d/%Y')
+
     for season_type in SEASON_TYPES:
         gamefinder = leaguegamefinder.LeagueGameFinder(
             season_nullable=season,
             league_id_nullable="00",
             season_type_nullable=season_type,
             timeout=30,
+            date_from_nullable=yesterday,
+            date_to_nullable=yesterday,
             headers=headers
         )
         games_df = gamefinder.get_data_frames()[0]
@@ -53,10 +73,9 @@ def get_all_game_ids_and_dates(season: str) -> tuple[list[str], dict[str, str]]:
     return unique_game_ids, game_date_map
 
 
-# Fetch traditional box scores (player stats) for every game of the season.
+# Fetch traditional box scores (player stats) for every game
 def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
     game_ids, game_date_map = get_all_game_ids_and_dates(season)
-    game_ids = game_ids[:TESTING_LIMIT]
     print(f"Found {len(game_ids)} games for {season} season")
 
     all_player_stats = []
@@ -113,7 +132,6 @@ def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
 
 # Upload the csv file to S3 bucket
 def upload_to_s3(local_path):
-    s3 = boto3.client('s3')
     s3.upload_file(local_path, os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv')
     print(f"Uploaded to S3 successfully")
 
@@ -123,7 +141,12 @@ if __name__ == "__main__":
     print(f"Columns: {list(box_scores.columns)}")
     print(box_scores.head(10))
 
-    output_path = os.path.join(BASE_DIR, "data_pipeline", "box_scores_2025_26.csv")
-    box_scores.to_csv(output_path, index=False)
+    existing_df = pd.read_csv(CSV_PATH)
+
+    updated_df = pd.concat([existing_df, box_scores], ignore_index=True)
+
+    output_path = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
+    updated_df.to_csv(output_path, index=False)
+
     print(f"\nSaved to {output_path}")
     upload_to_s3(output_path)

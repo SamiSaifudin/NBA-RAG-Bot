@@ -7,16 +7,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-FETCH_BATCH_SIZE = 1000
+FETCH_BATCH_SIZE = 100
 UPSERT_BATCH_SIZE = 90
-TRANSFORMER_MODEL = 'BAAI/bge-small-en-v1.5'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
 
 pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 index = pc.Index('clutchquery')
 
-# format date: '2026-02-23' -> 'Monday, February 23rd, 2026'.
+# format date: '2026-02-23' -> 'Monday, February 23rd, 2026'
 def format_game_date(iso_date_str: str) -> str:
     if not iso_date_str:
         return ""
