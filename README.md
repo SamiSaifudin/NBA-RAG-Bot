@@ -2,6 +2,8 @@
  
 An AI-powered NBA stats chatbot that answers both descriptive and aggregation questions about the 2025-26 NBA season using a hybrid RAG (Retrieval-Augmented Generation) architecture.
 
+**Try it out** — https://clutchquery.vercel.app/
+
 ## Features
 - Ask descriptive questions about specific games: *"How did Wembanyama play vs the Kings on February 21st?"*
 - Ask aggregation questions across multiple games: *"How many points is SGA averaging this season?"*
