@@ -149,6 +149,8 @@ async def run_bot(question: str, history: list[dict]) -> str:
                 - Phrases like 'this season', 'average', 'total', 'per game'
                 - Stats across multiple games
                 - Comparing multiple players or teams
+                - Always compute shooting percentages using totals, not averages of percentages. For example, NEVER DO: SELECT AVG("freeThrowsPercentage"). Instead do: SELECT 
+                100.0 * SUM(ft_made) / NULLIF(SUM(ft_attempted), 0) AS ft_percentage
 
                 2. query_vector_db: 
                 - Use ONLY when the user is asking about one specific game AND a specific player with a clear date or opponent mentioned (e.g. 'vs the Rockets on February 5th').
@@ -159,7 +161,7 @@ async def run_bot(question: str, history: list[dict]) -> str:
                 - Percentages are stored as floats (e.g. 0.55 = 55%)
 
                 Vector DB Rules:
-                - Convert relative date references to actual dates. 
+                - Convert relative date references to ACTUAL dates. 
                     * "yesterday" → the actual date
                     * "last Tuesday" → the actual date
                     * "X days ago" → the actual date
@@ -170,6 +172,8 @@ async def run_bot(question: str, history: list[dict]) -> str:
                 - Use exact tool names: query_sql_db and query_vector_db
                 - Always call a tool, never respond directly
                 - When in doubt, use query_sql_db
+                - Never use relative terms like 'yesterday' or '2 days ago' in your queries.
+                - ALWAYS USE FULL DATES, i.e., February 21st, 2026
 
                 If the user asks a follow up question, use the conversation history to understand what they are referring to before deciding which tool to use.
 
