@@ -17,6 +17,9 @@ pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 index = pc.Index('clutchquery')
 engine = create_engine(os.getenv('DATABASE_URL'))
 
+today = datetime.now()
+current_date = today.strftime("%A, %B %d, %Y")
+
 # Tools Definition
 tools = [
     {
@@ -132,9 +135,6 @@ async def run_bot(question: str, history: list[dict]) -> str:
     - trueShootingPercentage (float), Example: 0.574712643678161
     """
 
-    today = datetime.now()
-    current_date = today.strftime("%A, %B %d, %Y")
-
     # Router decides which tool to use
     response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -159,7 +159,11 @@ async def run_bot(question: str, history: list[dict]) -> str:
                 - Percentages are stored as floats (e.g. 0.55 = 55%)
 
                 Vector DB Rules:
-                - Convert relative date references to actual dates. i.e., "yesterday" → the actual date
+                - Convert relative date references to actual dates. 
+                    * "yesterday" → the actual date
+                    * "last Tuesday" → the actual date
+                    * "X days ago" → the actual date
+                    * "on Wednesday" → the actual date
 
                 General Rules:
                 - Tool names must not contain any whitespace, tabs, or special characters
@@ -207,7 +211,7 @@ async def run_bot(question: str, history: list[dict]) -> str:
     final_response = await client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": "You are an NBA stats assistant. Answer the question naturally using the data provided. If the question is a follow up, use the conversation history for context. BE CONCISE!"},
+            {"role": "system", "content": f"You are an NBA stats assistant for the {CURRENT_SEASON} season. Today's date is {current_date}. Answer the question naturally using the data provided. If the question is a follow up, use the conversation history for context. BE CONCISE!"},
             *history,
             {"role": "user", "content": f"Question: {question}\nData: {raw_result}"}
         ]
