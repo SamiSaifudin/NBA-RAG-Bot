@@ -17,6 +17,9 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+      
+      - name: Create directories
+        run: mkdir -p backend/data_pipeline/box_scores
 
       - name: Run load_db
         run: python backend/data_pipeline/load_db.py
