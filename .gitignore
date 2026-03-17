@@ -213,7 +213,7 @@ backend/data_pipeline/nba.db
 backend/data_pipeline/chroma_db/
 
 #CSV Data
-backend/data_pipeline/*.csv
+backend/data_pipeline/box_scores/*.csv
 
 frontend/node_modules/
 frontend/dist/

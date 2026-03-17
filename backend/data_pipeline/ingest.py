@@ -13,7 +13,11 @@ RATE_LIMIT_DELAY = 3
 TESTING_LIMIT = 10
 SEASON_TYPES = ("Regular Season", "Playoffs", "PlayIn")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
+
+date_str = datetime.now().strftime("%Y_%m_%d")
+yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y_%m_%d")
+
+csv_path = os.path.join(BASE_DIR, "box_scores", f"box_scores_{yesterday_str}.csv")
 
 s3 = boto3.client(
     's3',
@@ -22,9 +26,9 @@ s3 = boto3.client(
     region_name=os.getenv('AWS_REGION')
 )
 
-if not os.path.exists(CSV_PATH):
+if not os.path.exists(csv_path):
     print("CSV not found locally, downloading from S3...")
-    s3.download_file(os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv', CSV_PATH)
+    s3.download_file(os.getenv('S3_BUCKET_NAME'), f"box_scores_{yesterday_str}.csv", csv_path)
     print("Downloaded successfully")
 else:
     print("Using local CSV")
@@ -42,7 +46,7 @@ headers = {
 def get_all_game_ids_and_dates(season: str) -> tuple[list[str], dict[str, str]]:
     all_game_ids = []
     game_date_map = {}
-    
+
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%m/%d/%Y')
 
     for season_type in SEASON_TYPES:
@@ -132,7 +136,7 @@ def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
 
 # Upload the csv file to S3 bucket
 def upload_to_s3(local_path):
-    s3.upload_file(local_path, os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv')
+    s3.upload_file(local_path, os.getenv('S3_BUCKET_NAME'), f"box_scores_{date_str}.csv")
     print(f"Uploaded to S3 successfully")
 
 if __name__ == "__main__":
@@ -141,11 +145,11 @@ if __name__ == "__main__":
     print(f"Columns: {list(box_scores.columns)}")
     print(box_scores.head(10))
 
-    existing_df = pd.read_csv(CSV_PATH)
+    existing_df = pd.read_csv(csv_path)
 
     updated_df = pd.concat([existing_df, box_scores], ignore_index=True)
 
-    output_path = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
+    output_path = os.path.join(BASE_DIR, "box_scores", f"box_scores_{date_str}.csv")
     updated_df.to_csv(output_path, index=False)
 
     print(f"\nSaved to {output_path}")

@@ -10,7 +10,9 @@ load_dotenv()
 FETCH_BATCH_SIZE = 100
 UPSERT_BATCH_SIZE = 90
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
+
+date_str = datetime.now().strftime("%Y_%m_%d")
+csv_path = os.path.join(BASE_DIR, "box_scores", f"box_scores_{date_str}.csv")
 
 pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 index = pc.Index('clutchquery')
@@ -89,7 +91,7 @@ def row_to_text(row: pd.Series) -> str:
     )
 
 # Download from S3 if CSV doesn't exist locally
-if not os.path.exists(CSV_PATH):
+if not os.path.exists(csv_path):
     s3 = boto3.client(
         's3',
         aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
@@ -98,13 +100,13 @@ if not os.path.exists(CSV_PATH):
     )
 
     print("CSV not found locally, downloading from S3...")
-    s3.download_file(os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv', CSV_PATH)
+    s3.download_file(os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv', csv_path)
     print("Downloaded successfully")
 else:
     print("Using local CSV")
 
 # Load the CSV
-df = pd.read_csv(CSV_PATH)
+df = pd.read_csv(csv_path)
 print(f"Loaded {len(df)} rows")
 print(df.columns.tolist())
 
@@ -135,32 +137,36 @@ if len(new_rows) > 0:
     for i in range(0, len(df), UPSERT_BATCH_SIZE):
         batch = new_rows.iloc[i:i+UPSERT_BATCH_SIZE]
         
-        embeddings = pc.inference.embed(
-            model="multilingual-e5-large",
-            inputs=batch['text'].tolist(),
-            parameters={"input_type": "passage"}
-        )
-        
-        embeddings = [e['values'] for e in embeddings]
-        
-        vectors = [
-            {
-                "id": str(row['vector_id']),
-                "values": embeddings[j],
-                "metadata": {
-                    "text": row['text'],
-                    "firstName": str(row['firstName']),
-                    "lastName": str(row['lastName']),
-                    "teamName": str(row['teamName']),
-                    "game_date": str(row['game_date']),
-                    "opponent": str(row['opponent'])
+        try:
+            embeddings = pc.inference.embed(
+                model="multilingual-e5-large",
+                inputs=batch['text'].tolist(),
+                parameters={"input_type": "passage"}
+            )
+            
+            embeddings = [e['values'] for e in embeddings]
+            
+            vectors = [
+                {
+                    "id": str(row['vector_id']),
+                    "values": embeddings[j],
+                    "metadata": {
+                        "text": row['text'],
+                        "firstName": str(row['firstName']),
+                        "lastName": str(row['lastName']),
+                        "teamName": str(row['teamName']),
+                        "game_date": str(row['game_date']),
+                        "opponent": str(row['opponent'])
+                    }
                 }
-            }
-            for j, (_, row) in enumerate(batch.iterrows())
-        ]
+                for j, (_, row) in enumerate(batch.iterrows())
+            ]
 
-        index.upsert(vectors=vectors)
-        print(f"Uploaded batch {i} to {min(i+UPSERT_BATCH_SIZE, len(df))}")
+            index.upsert(vectors=vectors)
+            print(f"Uploaded batch {i} to {min(i+UPSERT_BATCH_SIZE, len(df))}")
+        except Exception as e:
+            print(f"Batch {i} failed: {e}, skipping...")
+            continue
 
     print(f"Done! {len(new_rows)} chunks embedded and stored in Pinecone.")
 else:

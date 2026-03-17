@@ -8,10 +8,12 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 load_dotenv()
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
+RETRY_LIMIT = 3
 CURRENT_SEASON = "2025-2026"
 VALID_TOOLS = {"query_sql_db", "query_vector_db"}
+
+client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
 pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 index = pc.Index('clutchquery')
@@ -135,68 +137,76 @@ async def run_bot(question: str, history: list[dict]) -> str:
     - trueShootingPercentage (float), Example: 0.574712643678161
     """
 
-    # Router decides which tool to use
-    response = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": f"""You are an NBA stats assistant for the {CURRENT_SEASON} season. Today's date is {current_date}.
+    for attempt in range(RETRY_LIMIT):
+        try:
+            response = await client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": f"""You are an NBA stats assistant for the {CURRENT_SEASON} season. Today's date is {current_date}.
 
-                You must always call exactly one of these two tools:
+                        You must always call exactly one of these two tools:
 
-                1. query_sql_db: 
-                Use for any question involving:
-                - Averages, totals, counts, or rankings
-                - Phrases like 'this season', 'average', 'total', 'per game'
-                - Stats across multiple games
-                - Comparing multiple players or teams
-                - Always compute shooting percentages using totals, not averages of percentages. For example, NEVER DO: SELECT AVG("freeThrowsPercentage"). Instead do: SELECT 
-                100.0 * SUM(ft_made) / NULLIF(SUM(ft_attempted), 0) AS ft_percentage
+                        1. query_sql_db: 
+                        Use for any question involving:
+                        - Averages, totals, counts, or rankings
+                        - Phrases like 'this season', 'average', 'total', 'per game'
+                        - Stats across multiple games
+                        - Comparing multiple players or teams
+                        - Always compute shooting percentages using totals, not averages of percentages. For example, NEVER DO: SELECT AVG("freeThrowsPercentage"). Instead do: SELECT 
+                        100.0 * SUM(ft_made) / NULLIF(SUM(ft_attempted), 0) AS ft_percentage
 
-                2. query_vector_db: 
-                - Use ONLY when the user is asking about one specific game AND a specific player with a clear date or opponent mentioned (e.g. 'vs the Rockets on February 5th').
+                        2. query_vector_db: 
+                        - Use ONLY when the user is asking about one specific game AND a specific player with a clear date or opponent mentioned (e.g. 'vs the Rockets on February 5th').
 
-                SQL Rules:
-                - Always SELECT all relevant columns needed to fully answer the question, never just SELECT a single column
-                - For player performance questions always include: game_date, opponent, points, assists, reboundsTotal, fieldGoalsPercentage, threePointersPercentage, freeThrowsPercentage, trueShootingPercentage, plusMinusPoints
-                - Percentages are stored as floats (e.g. 0.55 = 55%)
+                        SQL Rules:
+                        - Always SELECT all relevant columns needed to fully answer the question, never just SELECT a single column
+                        - For player performance questions always include: game_date, opponent, points, assists, reboundsTotal, fieldGoalsPercentage, threePointersPercentage, freeThrowsPercentage, trueShootingPercentage, plusMinusPoints
+                        - Percentages are stored as floats (e.g. 0.55 = 55%)
 
-                Vector DB Rules:
-                - Convert relative date references to ACTUAL dates. 
-                    * "yesterday" → the actual date
-                    * "last Tuesday" → the actual date
-                    * "X days ago" → the actual date
-                    * "on Wednesday" → the actual date
+                        Vector DB Rules:
+                        - Convert relative date references to ACTUAL dates. 
+                            * "yesterday" → the actual date
+                            * "last Tuesday" → the actual date
+                            * "X days ago" → the actual date
+                            * "on Wednesday" → the actual date
 
-                General Rules:
-                - Tool names must not contain any whitespace, tabs, or special characters
-                - Use exact tool names: query_sql_db and query_vector_db
-                - Always call a tool, never respond directly
-                - When in doubt, use query_sql_db
-                - Never use relative terms like 'yesterday' or '2 days ago' in your queries.
-                - ALWAYS USE FULL DATES, i.e., February 21st, 2026
+                        General Rules:
+                        - Tool names must not contain any whitespace, tabs, or special characters
+                        - Use exact tool names: query_sql_db and query_vector_db
+                        - Always call a tool, never respond directly
+                        - When in doubt, use query_sql_db
+                        - Never use relative terms like 'yesterday' or '2 days ago' in your queries.
+                        - ALWAYS USE FULL DATES, i.e., February 21st, 2026
+                        - True Shooting (TS)% Formula: PTS / (2 * (FGA + 0.44 * FTA))
+                        - Convert known nickname's to the player's real name. 
 
-                If the user asks a follow up question, use the conversation history to understand what they are referring to before deciding which tool to use.
+                        If the user asks a follow up question, use the conversation history to understand what they are referring to before deciding which tool to use.
 
-                IMPORTANT: Use the tool name EXACTLY as written above. No parentheses, no equals signs, no extra characters.
+                        IMPORTANT: Use the tool name EXACTLY as written above. No parentheses, no equals signs, no extra characters.
 
-                Example Vector DB Entry (ALL VECTOR DB ROWS LOOK LIKE THIS):
-                Victor Wembanyama played for Spurs vs Kings on Sunday, February 21st, 2026 (game 0022500815). 
-                In 29:45 minutes he scored 28 points: FG 11/20 (55.0%), 3PT 1/5 (20.0%), FT 5/7 (71.4%), True Shooting: 60.7%. 
-                He had 15 rebounds (1 offensive, 14 defensive), 6 assists, 1 steal, 4 blocks, 1 turnover, 3 fouls. 
-                +/-: 32.0.
+                        Example Vector DB Entry (ALL VECTOR DB ROWS LOOK LIKE THIS):
+                        Victor Wembanyama played for Spurs vs Kings on Sunday, February 21st, 2026 (game 0022500815). 
+                        In 29:45 minutes he scored 28 points: FG 11/20 (55.0%), 3PT 1/5 (20.0%), FT 5/7 (71.4%), True Shooting: 60.7%. 
+                        He had 15 rebounds (1 offensive, 14 defensive), 6 assists, 1 steal, 4 blocks, 1 turnover, 3 fouls. 
+                        +/-: 32.0.
 
-                Database schema:
-                {schema}
+                        Database schema:
+                        {schema}
 
-                Always wrap column names in double quotes since Postgres is case sensitive (e.g. "firstName", "teamName")
-            """},
-            *history,
-            {"role": "user", "content": question}
-        ],
-        tools=tools,
-        tool_choice="required",
-        parallel_tool_calls=False
-    )
+                        Always wrap column names in double quotes since Postgres is case sensitive (e.g. "firstName", "teamName")
+                    """},
+                    *history,
+                    {"role": "user", "content": question}
+                ],
+                tools=tools,
+                tool_choice="required",
+                parallel_tool_calls=False
+            )
+            break
+        except Exception as e:
+            print(f"Attempt {attempt+1} failed: {e}")
+            if attempt == 2:
+                return "I had trouble processing that question. Please try rephrasing it."
     
     tool_call = response.choices[0].message.tool_calls[0]
     tool_name = tool_call.function.name
@@ -220,7 +230,7 @@ async def run_bot(question: str, history: list[dict]) -> str:
             {"role": "user", "content": f"Question: {question}\nData: {raw_result}"}
         ]
     )
-    
+
     return final_response.choices[0].message.content
 
 async def main():

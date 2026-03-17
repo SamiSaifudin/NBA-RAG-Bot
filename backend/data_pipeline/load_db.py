@@ -1,6 +1,7 @@
 import os
 import boto3
 import pandas as pd
+from datetime import datetime
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
@@ -8,10 +9,12 @@ load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "nba.db")
-CSV_PATH = os.path.join(BASE_DIR, "box_scores_2025_26.csv")
+
+date_str = datetime.now().strftime("%Y_%m_%d")
+csv_path = os.path.join(BASE_DIR, "box_scores", f"box_scores_{date_str}.csv")
 
 # Download from S3 if CSV doesn't exist locally
-if not os.path.exists(CSV_PATH):
+if not os.path.exists(csv_path):
     s3 = boto3.client(
         's3',
         aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
@@ -20,12 +23,12 @@ if not os.path.exists(CSV_PATH):
     )
 
     print("CSV not found locally, downloading from S3...")
-    s3.download_file(os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv', CSV_PATH)
+    s3.download_file(os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv', csv_path)
     print("Downloaded successfully")
 else:
     print("Using local CSV")
 
-df = pd.read_csv(CSV_PATH)
+df = pd.read_csv(csv_path)
 
 engine = create_engine(os.getenv('DATABASE_URL'))
 
