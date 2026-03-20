@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 from groq import AsyncGroq
+from openai import AsyncOpenAI
 from pinecone import Pinecone
 from datetime import datetime
 from dotenv import load_dotenv
@@ -13,7 +14,8 @@ RETRY_LIMIT = 3
 CURRENT_SEASON = "2025-2026"
 VALID_TOOLS = {"query_sql_db", "query_vector_db"}
 
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+client = AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 index = pc.Index('clutchquery')
@@ -73,7 +75,7 @@ async def query_vector_db(query: str) -> str:
     print(context)
     
     response = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are an NBA stats assistant. Answer using only the context provided. If the context does not explicitly mention the requested game or stats, say you don't know and do NOT invent stats or opponents."},
             {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
@@ -140,9 +142,9 @@ async def run_bot(question: str, history: list[dict]) -> str:
     for attempt in range(RETRY_LIMIT):
         try:
             response = await client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": f"""You are an NBA stats assistant for the {CURRENT_SEASON} season. Today's date is {current_date}.
+                    {"role": "system", "content": f"""You are an NBA stats assistant for the {CURRENT_SEASON} season which started in October 2025. Today's date is {current_date}.
 
                         You must always call exactly one of these two tools:
 
@@ -222,7 +224,7 @@ async def run_bot(question: str, history: list[dict]) -> str:
         print(f"Routing to Vector DB: {args['query']}")
         raw_result = await query_vector_db(args['query'])
     
-    final_response = await client.chat.completions.create(
+    final_response = await groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": f"You are an NBA stats assistant for the {CURRENT_SEASON} season. Today's date is {current_date}. Answer the question naturally using the data provided. If the question is a follow up, use the conversation history for context. BE CONCISE!"},
