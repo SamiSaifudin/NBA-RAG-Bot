@@ -16,6 +16,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",              
+        "https://clutchquery.vercel.app",          
+    ],
+    allow_methods=["POST"],
+    allow_headers=["Content-Type"],
+)
+
 # Define shape of request body
 class QuestionRequest(BaseModel):
     question: str
