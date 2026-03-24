@@ -146,8 +146,12 @@ if __name__ == "__main__":
     print(box_scores.head(10))
 
     existing_df = pd.read_csv(csv_path)
+    existing_ids = set(existing_df['gameId'].unique())
 
-    updated_df = pd.concat([existing_df, box_scores], ignore_index=True)
+    # Filter out games already in CSV
+    new_games = box_scores[~box_scores['gameId'].isin(existing_ids)]
+
+    updated_df = pd.concat([existing_df, new_games], ignore_index=True)
 
     output_path = os.path.join(BASE_DIR, "box_scores", f"box_scores_{date_str}.csv")
     updated_df.to_csv(output_path, index=False)
