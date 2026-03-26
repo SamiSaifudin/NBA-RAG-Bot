@@ -34,7 +34,13 @@ tools = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string"}
+                    "query": {"type": "string"},
+                    "game_date": {
+                        "type": "string",
+                        "description": "Date in YYYY-MM-DD format e.g. 2026-03-15"
+                    },
+                    "first_name": {"type": "string"},
+                    "last_name": {"type": "string"}
                 },
                 "required": ["query"]
             }
@@ -56,7 +62,12 @@ tools = [
     }
 ]
 
-async def query_vector_db(query: str) -> str:
+async def query_vector_db(query: str, game_date: str = None, first_name: str = None, last_name: str = None) -> str:
+    filter = {}
+    if game_date: filter["game_date"] = game_date
+    if first_name: filter["firstName"] = first_name
+    if last_name: filter["lastName"] = last_name
+
     embedding = pc.inference.embed(
         model="multilingual-e5-large",
         inputs=[query],
@@ -67,8 +78,17 @@ async def query_vector_db(query: str) -> str:
     results = index.query(
         vector=query_embedding,
         top_k=10,
-        include_metadata=True
+        include_metadata=True,
+        filter=filter if filter else None
     )
+
+    if not results['matches']:
+        print("No results with filter, retrying without...")
+        results = index.query(
+            vector=query_embedding,
+            top_k=10,
+            include_metadata=True
+        )
 
     context = "\n".join([match['metadata']['text'] for match in results['matches']])
 
@@ -78,7 +98,7 @@ async def query_vector_db(query: str) -> str:
         model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are an NBA stats assistant. Answer using only the context provided. If the context does not explicitly mention the requested game or stats, say you don't know and do NOT invent stats or opponents."},
-            {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
+            {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}\n\nFilter: {filter}"}
         ]
     )
     return response.choices[0].message.content
@@ -166,11 +186,13 @@ async def run_bot(question: str, history: list[dict]) -> str:
                         - Percentages are stored as floats (e.g. 0.55 = 55%)
 
                         Vector DB Rules:
-                        - Convert relative date references to ACTUAL dates. 
+                        - Convert relative date references to ACTUAL dates in query. 
                             * "yesterday" → the actual date
                             * "last Tuesday" → the actual date
                             * "X days ago" → the actual date
                             * "on Wednesday" → the actual date
+                        - Query should be descriptive (TRY TO MATCH FORMAT OF ACTUAL VECTOR DB ENTRY)
+                        - Try to include date and opponent if they are given
 
                         General Rules:
                         - Tool names must not contain any whitespace, tabs, or special characters
@@ -181,6 +203,7 @@ async def run_bot(question: str, history: list[dict]) -> str:
                         - ALWAYS USE FULL DATES, i.e., February 21st, 2026
                         - True Shooting (TS)% Formula: PTS / (2 * (FGA + 0.44 * FTA))
                         - Convert known nickname's to the player's real name. 
+                        - DO NOT GUESS OPONENTS. 
 
                         If the user asks a follow up question, use the conversation history to understand what they are referring to before deciding which tool to use.
 
@@ -221,8 +244,8 @@ async def run_bot(question: str, history: list[dict]) -> str:
         print(f"Routing to SQL: {args['sql']}")
         raw_result = query_sql_db(args['sql'])
     elif tool_name.lower() == "query_vector_db":
-        print(f"Routing to Vector DB: {args['query']}")
-        raw_result = await query_vector_db(args['query'])
+        print(f"Routing to Vector DB: {args['query']}, First Name: {args.get('first_name', None)}, Last Name: {args.get('last_name', None)}, Game Date: {args.get('game_date', None)}")
+        raw_result = await query_vector_db(args['query'], args.get('game_date', None), args.get('first_name', None), args.get('last_name', None))
     
     final_response = await groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
