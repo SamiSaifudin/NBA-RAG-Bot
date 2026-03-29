@@ -1,6 +1,7 @@
 import os
 import time
 import boto3
+import unicodedata
 import pandas as pd
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -134,10 +135,15 @@ def fetch_box_scores_for_season(season: str) -> pd.DataFrame:
 
     return pd.concat(all_player_stats, ignore_index=True)
 
-# Upload the csv file to S3 bucket
 def upload_to_s3(local_path):
     s3.upload_file(local_path, os.getenv('S3_BUCKET_NAME'), f"box_scores_{date_str}.csv")
     print(f"Uploaded to S3 successfully")
+
+def remove_accents(text):
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', str(text))
+        if unicodedata.category(c) != 'Mn'
+    )
 
 if __name__ == "__main__":
     box_scores = fetch_box_scores_for_season(SEASON)
@@ -152,6 +158,9 @@ if __name__ == "__main__":
     new_games = box_scores[~box_scores['gameId'].isin(existing_ids)]
 
     updated_df = pd.concat([existing_df, new_games], ignore_index=True)
+
+    updated_df['firstName'] = updated_df['firstName'].apply(remove_accents)
+    updated_df['lastName'] = updated_df['lastName'].apply(remove_accents)
 
     output_path = os.path.join(BASE_DIR, "box_scores", f"box_scores_{date_str}.csv")
     updated_df.to_csv(output_path, index=False)
