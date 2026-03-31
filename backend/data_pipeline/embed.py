@@ -14,6 +14,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 date_str = datetime.now().strftime("%Y_%m_%d")
 csv_path = os.path.join(BASE_DIR, "box_scores", f"box_scores_{date_str}.csv")
 
+print(f"Today's Date: {date_str}")
+print(f"Reading: {csv_path}")
+
 pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 index = pc.Index('clutchquery')
 

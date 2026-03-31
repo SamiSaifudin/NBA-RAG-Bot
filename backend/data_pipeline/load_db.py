@@ -13,6 +13,9 @@ DB_PATH = os.path.join(BASE_DIR, "nba.db")
 date_str = datetime.now().strftime("%Y_%m_%d")
 csv_path = os.path.join(BASE_DIR, "box_scores", f"box_scores_{date_str}.csv")
 
+print(f"Today's Date: {date_str}")
+print(f"Reading: {csv_path}")
+
 # Download from S3 if CSV doesn't exist locally
 if not os.path.exists(csv_path):
     s3 = boto3.client(
