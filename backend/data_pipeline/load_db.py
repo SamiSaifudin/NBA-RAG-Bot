@@ -48,8 +48,7 @@ except Exception as e:
 
 # Insert in a separate connection
 if not new_rows.empty:
-    with engine.begin() as conn:
-        new_rows.to_sql('boxscores', conn, if_exists='append', index=False)
-        print(f"Inserted {len(new_rows)} new rows")
+    new_rows.to_sql('boxscores', engine, if_exists='append', index=False)
+    print(f"Inserted {len(new_rows)} new rows")
 else:
     print("No new games to insert")
