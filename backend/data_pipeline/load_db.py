@@ -26,7 +26,7 @@ if not os.path.exists(csv_path):
     )
 
     print("CSV not found locally, downloading from S3...")
-    s3.download_file(os.getenv('S3_BUCKET_NAME'), 'box_scores_2025_26.csv', csv_path)
+    s3.download_file(os.getenv('S3_BUCKET_NAME'), f"box_scores_{date_str}.csv", csv_path)
     print("Downloaded successfully")
 else:
     print("Using local CSV")
